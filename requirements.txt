@@ -8,3 +8,4 @@ einops
 Pillow
 argparse
 tqdm
+scikit-learn

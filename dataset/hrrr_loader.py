@@ -1,3 +1,7 @@
+import concurrent
+import time
+from functools import lru_cache
+
 import torch
 from torch.utils.data import Dataset
 import os
@@ -12,11 +16,12 @@ np.random.seed(0)
 
 class HRRR_Dataset(Dataset):
 
-    def __init__(self, root_dir, json_file):
+    def __init__(self, root_dir, json_file, num_workers=4):
 
-        self.select_cols = ['Avg Temperature (K)',	'Max Temperature (K)',	'Min Temperature (K)',
-                            'Precipitation (kg m**-2)', 'Relative Humidity (%)', 'Wind Gust (m s**-1)',	'Wind Speed (m s**-1)',
-                            'Downward Shortwave Radiation Flux (W m**-2)',	'Vapor Pressure Deficit (kPa)']
+        self.select_cols = ['Avg Temperature (K)', 'Max Temperature (K)', 'Min Temperature (K)',
+                            'Precipitation (kg m**-2)', 'Relative Humidity (%)', 'Wind Gust (m s**-1)',
+                            'Wind Speed (m s**-1)',
+                            'Downward Shortwave Radiation Flux (W m**-2)', 'Vapor Pressure Deficit (kPa)']
 
         # 1st day range: from 1st to 14th
         # 2nd day range: from 15th to 28th
@@ -27,7 +32,8 @@ class HRRR_Dataset(Dataset):
         self.years = []
         self.short_term_file_path = []
         self.long_term_file_path = []
-        self.scaler = preprocessing.StandardScaler()
+
+        self.num_workers = num_workers
 
         for obj in data:
             self.fips_codes.append(obj["FIPS"])
@@ -42,6 +48,7 @@ class HRRR_Dataset(Dataset):
                 tmp_long_term = []
                 for file_path in file_paths:
                     tmp_long_term.append(os.path.join(root_dir, file_path))
+
                 long_term.append(tmp_long_term)
 
             self.short_term_file_path.append(short_term)
@@ -53,11 +60,31 @@ class HRRR_Dataset(Dataset):
     def __getitem__(self, index):
         fips_code, year, = self.fips_codes[index], self.years[index]
 
+        # todo
+        # Record start time
+        start_time = time.time()
+
         short_term_file_paths = self.short_term_file_path[index]
         x_short = self.get_short_term_val(fips_code, short_term_file_paths)
 
+        # Record end time
+        end_time = time.time()
+        # Calculate elapsed time
+        elapsed_time = end_time - start_time
+        print(f"Short-term Time Elapsed: {elapsed_time:.6f} seconds")
+
+        # todo
+        # Record start time
+        start_time = time.time()
+
         long_term_file_paths = self.long_term_file_path[index]
         x_long = self.get_long_term_val(fips_code, long_term_file_paths)
+
+        # Record end time
+        end_time = time.time()
+        # Calculate elapsed time
+        elapsed_time = end_time - start_time
+        print(f"Short-term Time Elapsed: {elapsed_time:.6f} seconds")
 
         # convert type
         x_short = x_short.to(torch.float32)
@@ -106,18 +133,25 @@ class HRRR_Dataset(Dataset):
             temporal_list.append(torch.stack(time_series2))
 
         x_short = torch.stack(temporal_list)
+
         return x_short
 
     def get_long_term_val(self, fips_code, temporal_file_paths):
         temporal_list = []
 
         for file_paths in temporal_file_paths:
-            df_list = []
-            for file_path in file_paths:
-                tmp_df = pd.read_csv(file_path)
-                df_list.append(tmp_df)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                # Submit read_csv_file function for each file path
+                futures = [executor.submit(read_csv_file, file_path) for file_path in file_paths]
 
-            df = pd.concat(df_list, ignore_index=True)
+                # Wait for all tasks (reading files) to complete
+                concurrent.futures.wait(futures)
+
+                # Get the results (DataFrames) from the completed tasks
+                dfs = [future.result() for future in futures]
+
+            df = pd.concat(dfs, ignore_index=True)
+
 
             # read FIPS code as string
             df["FIPS Code"] = df["FIPS Code"].astype(str)
@@ -140,13 +174,19 @@ class HRRR_Dataset(Dataset):
         x_long = torch.stack(temporal_list)
         return x_long
 
+@lru_cache(maxsize=64)
+def read_csv_file(file_path):
+    return pd.read_csv(file_path)
+
 
 if __name__ == '__main__':
-    root_dir = "/mnt/data/Crop"
+    root_dir = "/mnt/data/Tiny CropNet"
     train = "./../data/soybean_train.json"
+    # train = "./../data/soybean_val.json"
     dataset = HRRR_Dataset(root_dir, train)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=1)
     for xs, xl, f, y in train_loader:
-        print(xs.shape)
-        print(xl.shape)
+        print("fips: {}, year: {}, short shape: {}".format(f, y, xs.shape))
+        print("fips: {}, year: {}, long shape: {}".format(f, y, xs.shape))
 
+        print("done!")

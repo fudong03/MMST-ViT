@@ -51,11 +51,14 @@ class Sentinel_Dataset(Dataset):
 
 
 if __name__ == '__main__':
-    root_dir = "/mnt/data/Crop"
-    train = "./../data/soybean_train.json"
+    root_dir = "/mnt/data/Tiny CropNet"
+    # train = "./../data/soybean_train.json"
+    train = "./../data/soybean_val.json"
     dataset = Sentinel_Dataset(root_dir, train)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
     for x, f, y in train_loader:
-        print(f)
-        print(x.shape)
+        print("fips: {}, year: {}, shape: {}".format(f, y, x.shape))
+        x = x / 255
+        print("done!")
+        break

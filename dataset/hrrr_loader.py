@@ -60,31 +60,11 @@ class HRRR_Dataset(Dataset):
     def __getitem__(self, index):
         fips_code, year, = self.fips_codes[index], self.years[index]
 
-        # todo
-        # Record start time
-        start_time = time.time()
-
         short_term_file_paths = self.short_term_file_path[index]
         x_short = self.get_short_term_val(fips_code, short_term_file_paths)
 
-        # Record end time
-        end_time = time.time()
-        # Calculate elapsed time
-        elapsed_time = end_time - start_time
-        print(f"Short-term Time Elapsed: {elapsed_time:.6f} seconds")
-
-        # todo
-        # Record start time
-        start_time = time.time()
-
         long_term_file_paths = self.long_term_file_path[index]
         x_long = self.get_long_term_val(fips_code, long_term_file_paths)
-
-        # Record end time
-        end_time = time.time()
-        # Calculate elapsed time
-        elapsed_time = end_time - start_time
-        print(f"Short-term Time Elapsed: {elapsed_time:.6f} seconds")
 
         # convert type
         x_short = x_short.to(torch.float32)

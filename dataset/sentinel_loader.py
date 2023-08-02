@@ -39,10 +39,13 @@ class Sentinel_Dataset(Dataset):
         for file_path in file_paths:
             with h5py.File(file_path, 'r') as hf:
                 groups = hf[fips_code]
-                for d in groups.keys():
-                    grids = groups[d]["data"]
-                    grids = np.asarray(grids)
-                    temporal_list.append(torch.from_numpy(grids))
+                for i, d in enumerate(groups.keys()):
+                    # only consider the 1st day of each month
+                    # note that the h5 file contains the 1st and 15th of images for each month, e.g., "04-01" and "04-15"
+                    if i % 2 == 0:
+                        grids = groups[d]["data"]
+                        grids = np.asarray(grids)
+                        temporal_list.append(torch.from_numpy(grids))
                 hf.close()
 
         x = torch.stack(temporal_list)
@@ -57,8 +60,9 @@ if __name__ == '__main__':
     dataset = Sentinel_Dataset(root_dir, train)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
+    max_g = 0
     for x, f, y in train_loader:
         print("fips: {}, year: {}, shape: {}".format(f, y, x.shape))
-        x = x / 255
-        print("done!")
-        break
+        max_g = max(max_g, tuple(x.shape)[2])
+
+    print(max_g)

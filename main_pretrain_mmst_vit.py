@@ -14,6 +14,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 
 import timm.optim.optim_factory as optim_factory
+from tqdm import tqdm
 
 import util.misc as misc
 from dataset.hrrr_loader import HRRR_Dataset
@@ -29,8 +30,9 @@ from dataset import sentinel_wrapper
 def get_args_parser():
     parser = argparse.ArgumentParser('PVT SimCLR pre-training', add_help=False)
 
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser.add_argument('--batch_size', default=32, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
+    parser.add_argument('--embed_dim', default=512, type=int, help='embed dimensions')
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--model', default='pvt_tiny', type=str, metavar='MODEL',
                         help='Name of backbone model to train')
@@ -45,6 +47,8 @@ def get_args_parser():
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
                         help='weight decay (default: 0.05)')
+    parser.add_argument('--layer_decay', type=float, default=0.75,
+                        help='layer decay (default: 0.75)')
 
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='learning rate (absolute lr)')
@@ -60,7 +64,7 @@ def get_args_parser():
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir/pvt_simclr',
                         help='path where to tensorboard log')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='cuda:1',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
@@ -83,9 +87,9 @@ def get_args_parser():
                         help='url used to set up distributed training')
 
     # dataset
-    parser.add_argument('-dr', '--root_dir', type=str, default='/mnt/data/Crop')
+    parser.add_argument('-dr', '--root_dir', type=str, default='/mnt/data/Tiny CropNet')
     parser.add_argument('-tf', '--data_file', type=str, default='./data/soybean_train.json')
-    parser.add_argument('-sf', '--save_freq', type=int, default=10)
+    parser.add_argument('-sf', '--save_freq', type=int, default=5)
 
     return parser
 
@@ -135,6 +139,7 @@ def main(args):
         batch_size=1,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
+        shuffle=False,
         drop_last=True,
     )
 
@@ -143,10 +148,11 @@ def main(args):
         batch_size=1,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
+        shuffle=False,
         drop_last=True,
     )
 
-    model = PVTSimCLR(args.model, out_dim=512, context_dim=9, pretrained=True)
+    model = PVTSimCLR(args.model, out_dim=args.embed_dim, context_dim=9, pretrained=True)
 
     model.to(device)
 
@@ -168,8 +174,8 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
-    # following timm: set wd as 0 for bias and norm layers
     param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
+
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     print(optimizer)
     loss_scaler = NativeScaler()
@@ -216,8 +222,6 @@ def train_one_epoch(model: torch.nn.Module,
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 20
     batch_size = args.batch_size
 
     accum_iter = args.accum_iter
@@ -228,7 +232,13 @@ def train_one_epoch(model: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (x, y) in enumerate(metric_logger.log_every(list(zip(data_loader_sentinel, data_loader_hrrr)), print_freq, header)):
+    total_step = len(data_loader_sentinel) - 1
+    for data_iter_step, (x, y) in enumerate(zip(data_loader_sentinel, data_loader_hrrr)):
+
+        fips, max_mem = x[1][0], torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+        num_grids = tuple(x[0].shape)[2]
+        print("Epoch: [{}]  [ {} / {}]  FIPS Code: {}  Number of Grids: {}  Max Mem: {}"
+              .format(epoch, data_iter_step, total_step, fips, num_grids, f"{max_mem:.0f}"))
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:

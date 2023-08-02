@@ -43,7 +43,7 @@ The above figure illustrates the architexture of our proposed multi-modal self-s
 
 ```python
 # pre-train
-python main_pretrain.py
+python main_pretrain_mmst_vit.py
 ```
 
 

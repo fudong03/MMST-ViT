@@ -147,7 +147,7 @@ class SpatialAttention(nn.Module):
 
 
 class TemporalAttention(nn.Module):
-    def __init__(self, dim, bias_dim=None, num_month=6, heads=8, dim_head=64, dropout=0.):
+    def __init__(self, dim, heads=8, dim_head=64, dropout=0.):
         super().__init__()
         inner_dim = dim_head * heads
         project_out = not (heads == 1 and dim_head == dim)
@@ -157,9 +157,6 @@ class TemporalAttention(nn.Module):
 
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
 
-        if exists(bias_dim):
-            self.to_b = nn.Linear(bias_dim, (num_month + 1) * heads, bias=False)
-
         self.to_out = nn.Sequential(
             nn.Linear(inner_dim, dim),
             nn.Dropout(dropout)
@@ -167,16 +164,13 @@ class TemporalAttention(nn.Module):
 
     def forward(self, x, bias=None):
         b, n, _, h = *x.shape, self.heads
+
+        if exists(bias): x += bias
+
         qkv = self.to_qkv(x).chunk(3, dim=-1)
         q, k, v = map(lambda t: rearrange(t, 'b t (h d) -> b h t d', h=h), qkv)
 
         dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
-
-        # regard long-term weather parameters as the bias
-        if exists(bias):
-            bias = self.to_b(bias)
-            bias = rearrange(bias, 'b i (h j) -> b h i j', h=h)
-            dots += bias
 
         attn = dots.softmax(dim=-1)
 
@@ -193,7 +187,8 @@ class MultiModalTransformer(nn.Module):
         self.norm = nn.LayerNorm(dim)
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                PreNorm(dim, MultiModalAttention(dim, context_dim=context_dim, heads=heads, dim_head=dim_head, dropout=dropout)),
+                PreNorm(dim, MultiModalAttention(dim, context_dim=context_dim, heads=heads, dim_head=dim_head,
+                                                 dropout=dropout)),
                 PreNorm(dim, FeedForward(dim, dim_out=dim, mult=mult, dropout=dropout))
             ]))
 
@@ -229,7 +224,7 @@ class TemporalTransformer(nn.Module):
         self.norm = nn.LayerNorm(dim)
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                PreNorm(dim, TemporalAttention(dim, bias_dim=dim, heads=heads, dim_head=dim_head, dropout=dropout)),
+                PreNorm(dim, TemporalAttention(dim, heads=heads, dim_head=dim_head, dropout=dropout)),
                 PreNorm(dim, FeedForward(dim, dim_out=dim, mult=mult, dropout=dropout))
             ]))
 

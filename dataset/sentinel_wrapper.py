@@ -53,7 +53,7 @@ class SimCLRDataTransform(object):
                                               transforms.RandomGrayscale(p=0.2),
                                               transforms.GaussianBlur(kernel_size=self.kernel_size),
                                               transforms.ToTensor(),
-                                              transforms.Normalize([0.466, 0.471, 0.380], [0.195, 0.194, 0.192]),
+                                              # transforms.Normalize([0.466, 0.471, 0.380], [0.195, 0.194, 0.192]),
                                               ])
         return data_transforms
 
@@ -62,12 +62,13 @@ def get_data_loader(X, Y, batch_size=128, num_workers=8):
     transform = SimCLRDataTransform()
     dataset = Sentinel_Subset(X, Y, transform)
     data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False, drop_last=False)
+    # data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False, drop_last=True)
 
     return data_loader
 
 
 if __name__ == '__main__':
-    root_dir = "/mnt/data/Crop"
+    root_dir = "/mnt/data/Tiny CropNet"
     train = "./../data/soybean_train.json"
     dataset = Sentinel_Dataset(root_dir, train)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=1)

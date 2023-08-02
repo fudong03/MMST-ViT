@@ -35,12 +35,16 @@ from datetime import datetime
 torch.manual_seed(0)
 np.random.seed(0)
 
+# RMSE, R_Squared, Corr
+best_metrics = [float("inf"), 0, 0]
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MMST-ViT fine-tuning', add_help=False)
 
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
+    parser.add_argument('--embed_dim', default=512, type=int, help='embed dimensions')
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--model_pvt', default='pvt_tiny', type=str, metavar='MODEL',
                         help='Name of backbone model to train')
@@ -91,18 +95,21 @@ def get_args_parser():
                         help='url used to set up distributed training')
 
     # dataset
-    parser.add_argument('-dr', '--root_dir', type=str, default='/mnt/data/Crop')
-    parser.add_argument('-sf', '--save_freq', type=int, default=10)
+    parser.add_argument('-dr', '--root_dir', type=str, default='/mnt/data/Tiny CropNet')
+    parser.add_argument('-sf', '--save_freq', type=int, default=1)
 
     # train and val
     parser.add_argument('-dft', '--data_file_train', type=str, default='./data/soybean_train.json')
     parser.add_argument('-dfv', '--data_file_val', type=str, default='./data/soybean_val.json')
 
     # pvt_simclr
-    parser.add_argument('--pvt_simclr', default='./models/pvt_simclr/pvt_tiny.pth', help='load from checkpoint')
+    # parser.add_argument('--pvt_simclr', default='', help='load from checkpoint')
+    parser.add_argument('--pvt_simclr', default='./models/pvt_simclr/checkpoint-30.pth', help='load from checkpoint')
+    # parser.add_argument('--pvt_simclr', default='./models/pvt_simclr/pvt_tiny.pth', help='load from checkpoint')
 
     # evaluate
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
+    parser.add_argument('--eval_year', type=int, default=2022, help='specify the year for prediction')
 
     # resume
     parser.add_argument('--resume', default='', help='resume from checkpoint')
@@ -223,14 +230,14 @@ def main(args):
         drop_last=True,
     )
 
-    pvt = PVTSimCLR(args.model_pvt, out_dim=512, context_dim=9)
+    pvt = PVTSimCLR(args.model_pvt, out_dim=args.embed_dim, context_dim=9)
     if args.pvt_simclr:
         checkpoint = torch.load(args.pvt_simclr, map_location='cpu')
         pvt.load_state_dict(checkpoint['model'])
         pvt.to(device)
         pvt.eval()
 
-    model = MMST_ViT(out_dim=2, pvt_backbone=pvt, context_dim=9, dim=512, batch_size=args.batch_size)
+    model = MMST_ViT(out_dim=2, pvt_backbone=pvt, context_dim=9, dim=args.embed_dim, batch_size=args.batch_size)
     model.to(device)
 
     model_without_ddp = model
@@ -290,8 +297,7 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                     'epoch': epoch, }
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch, }
 
         if args.output_dir and misc.is_main_process():
             if log_writer is not None:
@@ -311,8 +317,6 @@ def train_one_epoch(model: torch.nn.Module,
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 20
 
     accum_iter = args.accum_iter
     # data augmentation by following SimCLR
@@ -324,13 +328,18 @@ def train_one_epoch(model: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (x, y, z) in enumerate(
-            metric_logger.log_every(list(zip(data_loader_sentinel, data_loader_hrrr, data_loader_usda)), print_freq,
-                                    header)):
+    total_step = len(data_loader_sentinel) - 1
+    for data_iter_step, (x, y, z) in enumerate(zip(data_loader_sentinel, data_loader_hrrr, data_loader_usda)):
+
+        fips, max_mem = x[1][0], torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+        num_grids = tuple(x[0].shape)[2]
+        print("Epoch: [{}]  [ {} / {}]  FIPS Code: {}  Number of Grids: {}  Max Mem: {}"
+              .format(epoch, data_iter_step, total_step, fips, num_grids, f"{max_mem:.0f}"))
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader_sentinel) + epoch, args)
+
 
         # satellited imagery
         x = x[0].to(device, non_blocking=True)
@@ -343,7 +352,9 @@ def train_one_epoch(model: torch.nn.Module,
         b, t, g, _, _, _ = x.shape
         x = rearrange(x, 'b t g h w c -> (b t g) c h w')
         x, _ = data_wrapper(x)
+
         x = rearrange(x, '(b t g) c h w -> b t g c h w', b=b, t=t, g=g)
+
 
         z_hat = model(x, ys=ys, yl=yl)
 
@@ -388,16 +399,20 @@ def train_one_epoch(model: torch.nn.Module,
 def evaluate(model: torch.nn.Module, data_loader_sentinel: Iterable, data_loader_hrrr: Iterable,
              data_loader_usda: Iterable, device: torch.device):
     # data augmentation by following SimCLR
-    data_wrapper = DataWrapper()
+    data_wrapper = DataWrapper(train=False)
 
     true_labels = torch.empty(0)
     pred_labels = torch.empty(0)
-    year = None
-    for x, y, z in tqdm(list(zip(data_loader_sentinel, data_loader_hrrr, data_loader_usda))):
-        if not year:
-            year = x[2]
 
-        # satellited imagery
+    total_step = len(data_loader_sentinel) - 1
+    for data_iter_step, (x, y, z) in enumerate(zip(data_loader_sentinel, data_loader_hrrr, data_loader_usda)):
+
+        fips, max_mem = x[1][0], torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+        num_grids = tuple(x[0].shape)[2]
+        print(" Eval [ {} / {}]  FIPS Code: {}  Number of Grids: {}  Max Mem: {}"
+              .format(data_iter_step, total_step, fips, num_grids, f"{max_mem:.0f}"))
+
+        # satellite imagery
         x = x[0].to(device, non_blocking=True)
 
         # short- and long-term weather variables
@@ -405,9 +420,7 @@ def evaluate(model: torch.nn.Module, data_loader_sentinel: Iterable, data_loader
         yl = y[1].to(device, non_blocking=True)
 
         # USDA
-        # z = scalar_norm(z[0])
         z = z[0].to(device, non_blocking=True)
-        # z = model.normalize_labels(z)
 
         b, t, g, _, _, _ = x.shape
         x = rearrange(x, 'b t g h w c -> (b t g) c h w')
@@ -419,38 +432,38 @@ def evaluate(model: torch.nn.Module, data_loader_sentinel: Iterable, data_loader
         true_labels = torch.cat([true_labels, z.detach().cpu()], dim=0)
         pred_labels = torch.cat([pred_labels, z_hat.detach().cpu()], dim=0)
 
+
     true_labels = torch.exp(torch.flatten(true_labels[:, -1:], start_dim=0)).detach().cpu().numpy()
     pred_labels = torch.exp(torch.flatten(pred_labels[:, -1:], start_dim=0)).detach().cpu().numpy()
 
-    rmse, r2, pcc = metrics.evaluate(true_labels, pred_labels)
+    rmse, r2, corr = metrics.evaluate(true_labels, pred_labels)
 
-    # save csv
-    save_results(rmse, r2, pcc, year)
+    global best_metrics
+    best_metrics = [min(best_metrics[0], rmse), max(best_metrics[1], r2), max(best_metrics[2], corr)]
+    print("Metrics: RMSE: {}  R_Squared: {}  Corr: {}; Best Metrics: RMSE: {}  R_Squared: {}  Corr: {}"
+          .format(f"{rmse:.2f}", f"{r2:.2f}", f"{corr:.2f}", f"{best_metrics[0]:.2f}", f"{ best_metrics[1]:.2f}", f"{best_metrics[2]:.2f}"))
+
+    # save to csv
+    save_results(rmse, r2, corr, best_metrics)
 
 
-def save_results(rmse, r2, pcc, year):
-    year = year.numpy()[0]
-
+def save_results(rmse, r2, corr, best_metrics):
     csv_path = "./output_dir/pred/soybeans_{}.csv".format(datetime.now().strftime("%Y-%m-%d"))
 
     now = datetime.now()
     date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
 
-    report = {}
-    report["yield"] = {
-        "Type": "Soybeans",
-        "Year": year,
-        "RMSE": rmse,
-        "R2": r2,
-        "PCC": pcc,
-        "Run Time": date_time
-    }
+    data = {
+        'RMSE': [rmse],
+        'R_Squared': [r2],
+        'Corr': [corr],
+        'Best_RMSE': [best_metrics[0]],
+        'Best_R_Squared': [best_metrics[1]],
+        'Best_Corr': [best_metrics[2]],
+        'Run Time': [date_time],
+        }
 
-    df = pd.DataFrame(report).transpose()
-    df.to_csv(csv_path, mode='a')
-
-    blank = {}
-    df = pd.DataFrame(blank)
+    df = pd.DataFrame(data)
     df.to_csv(csv_path, mode='a')
 
 

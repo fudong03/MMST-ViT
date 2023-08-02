@@ -1,5 +1,6 @@
 import concurrent
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 import torch
@@ -23,9 +24,8 @@ class HRRR_Dataset(Dataset):
                             'Wind Speed (m s**-1)',
                             'Downward Shortwave Radiation Flux (W m**-2)', 'Vapor Pressure Deficit (kPa)']
 
-        # 1st day range: from 1st to 14th
-        # 2nd day range: from 15th to 28th
-        self.day_range = [[i for i in range(1, 15)], [j for j in range(15, 29)]]
+        # consider the first 28 days in each month
+        self.day_range = [i for i in range(1, 29)]
 
         data = json.load(open(json_file))
         self.fips_codes = []
@@ -34,6 +34,8 @@ class HRRR_Dataset(Dataset):
         self.long_term_file_path = []
 
         self.num_workers = num_workers
+
+        self.executor = ThreadPoolExecutor(max_workers=num_workers)
 
         for obj in data:
             self.fips_codes.append(obj["FIPS"])
@@ -75,7 +77,7 @@ class HRRR_Dataset(Dataset):
     def get_short_term_val(self, fips_code, file_paths):
         df_list = []
         for file_path in file_paths:
-            tmp_df = pd.read_csv(file_path)
+            tmp_df = self.read_csv_file(file_path)
             df_list.append(tmp_df)
 
         df = pd.concat(df_list, ignore_index=True)
@@ -93,24 +95,17 @@ class HRRR_Dataset(Dataset):
         for month, df_month in group_month:
             group_grid = df_month.groupby(['Grid Index'])
 
-            time_series1, time_series2 = [], []
+            time_series = []
             for grid, df_grid in group_grid:
                 df_grid = df_grid.sort_values(by=['Day'], ascending=[True], na_position='first')
 
-                # 1st day range: from 1st to 14th
-                df_grid1 = df_grid[df_grid.Day.isin(self.day_range[0])]
-                df_grid1 = df_grid1[self.select_cols]
-                val1 = torch.from_numpy(df_grid1.values)
-                time_series1.append(val1)
+                df_grid = df_grid[df_grid.Day.isin(self.day_range)]
+                df_grid = df_grid[self.select_cols]
 
-                # 2nd day range: from 15th to 28th
-                df_grid2 = df_grid[df_grid.Day.isin(self.day_range[1])]
-                df_grid2 = df_grid2[self.select_cols]
-                val2 = torch.from_numpy(df_grid2.values)
-                time_series2.append(val2)
+                val = torch.from_numpy(df_grid.values)
+                time_series.append(val)
 
-            temporal_list.append(torch.stack(time_series1))
-            temporal_list.append(torch.stack(time_series2))
+            temporal_list.append(torch.stack(time_series))
 
         x_short = torch.stack(temporal_list)
 
@@ -120,18 +115,17 @@ class HRRR_Dataset(Dataset):
         temporal_list = []
 
         for file_paths in temporal_file_paths:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-                # Submit read_csv_file function for each file path
-                futures = [executor.submit(read_csv_file, file_path) for file_path in file_paths]
 
-                # Wait for all tasks (reading files) to complete
-                concurrent.futures.wait(futures)
+            # Submit read_csv_file function for each file path
+            futures = [self.executor.submit(self.read_csv_file, file_path) for file_path in file_paths]
 
-                # Get the results (DataFrames) from the completed tasks
-                dfs = [future.result() for future in futures]
+            # Wait for all tasks (reading files) to complete
+            concurrent.futures.wait(futures)
+
+            # Get the results (DataFrames) from the completed tasks
+            dfs = [future.result() for future in futures]
 
             df = pd.concat(dfs, ignore_index=True)
-
 
             # read FIPS code as string
             df["FIPS Code"] = df["FIPS Code"].astype(str)
@@ -154,9 +148,9 @@ class HRRR_Dataset(Dataset):
         x_long = torch.stack(temporal_list)
         return x_long
 
-@lru_cache(maxsize=64)
-def read_csv_file(file_path):
-    return pd.read_csv(file_path)
+    @lru_cache(maxsize=128)
+    def read_csv_file(self, file_path):
+        return pd.read_csv(file_path)
 
 
 if __name__ == '__main__':
@@ -165,8 +159,17 @@ if __name__ == '__main__':
     # train = "./../data/soybean_val.json"
     dataset = HRRR_Dataset(root_dir, train)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=1)
+
+    # Record start time
+    start_time = time.time()
     for xs, xl, f, y in train_loader:
         print("fips: {}, year: {}, short shape: {}".format(f, y, xs.shape))
-        print("fips: {}, year: {}, long shape: {}".format(f, y, xs.shape))
+        print("fips: {}, year: {}, long shape: {}".format(f, y, xl.shape))
 
-        print("done!")
+        # Record end time
+        end_time = time.time()
+        # Calculate elapsed time
+        elapsed_time = end_time - start_time
+        print(f"Time Elapsed: {elapsed_time:.6f} seconds")
+
+        start_time = time.time()

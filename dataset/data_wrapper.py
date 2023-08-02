@@ -8,11 +8,15 @@ from dataset.sentinel_loader import Sentinel_Dataset
 
 
 class DataWrapper(object):
-    def __init__(self, img_size=224, s=1, kernel_size=9):
+    def __init__(self, img_size=224, s=1, kernel_size=9, train=True):
         self.img_size = img_size
         self.s = s
         self.kernel_size = kernel_size
-        self.transform = self.get_simclr_pipeline_transform()
+
+        if train:
+            self.transform = self.get_simclr_pipeline_transform()
+        else:
+            self.transform = self.get_transform_val()
 
     def __call__(self, x):
         x = x.to(torch.float32)
@@ -28,6 +32,13 @@ class DataWrapper(object):
                                               transforms.RandomApply([color_jitter], p=0.8),
                                               transforms.RandomGrayscale(p=0.2),
                                               transforms.GaussianBlur(kernel_size=self.kernel_size),
+                                              transforms.Normalize([0.466, 0.471, 0.380], [0.195, 0.194, 0.192]),
+                                              ])
+        return data_transforms
+
+    def get_transform_val(self):
+        # get a set of data augmentation transformations as described in the SimCLR paper.
+        data_transforms = transforms.Compose([transforms.CenterCrop(size=self.img_size),
                                               transforms.Normalize([0.466, 0.471, 0.380], [0.195, 0.194, 0.192]),
                                               ])
         return data_transforms

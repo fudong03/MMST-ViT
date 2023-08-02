@@ -165,12 +165,16 @@ class TemporalAttention(nn.Module):
     def forward(self, x, bias=None):
         b, n, _, h = *x.shape, self.heads
 
-        if exists(bias): x += bias
-
         qkv = self.to_qkv(x).chunk(3, dim=-1)
         q, k, v = map(lambda t: rearrange(t, 'b t (h d) -> b h t d', h=h), qkv)
 
         dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
+
+        if exists(bias):
+            bias = self.to_qkv(bias).chunk(3, dim=-1)
+            qb, kb, _ = map(lambda t: rearrange(t, 'b t (h d) -> b h t d', h=h), bias)
+            bias = einsum('b h i d, b h j d -> b h i j', qb, kb) * self.scale
+            dots += bias
 
         attn = dots.softmax(dim=-1)
 

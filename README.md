@@ -14,13 +14,18 @@ This repository provides the official implementation of our proposed Multi-Modal
 
 Our model is based on the following libraries:
 
-- torch
-- torchvision
-- timm
-- numpy
-- pandas
-- h5py
-- Pillow
+- torch == 1.13.0
+- torchvision == 0.14.0
+- timm == 0.5.4
+- numpy == 1.24.4
+- pandas == 2.0.3
+- h5py == 3.9.0
+- einops == 0.6.1
+- Pillow == 10.0.0
+- argparse == 1.4.0
+- tqdm == 4.65.0
+- scikit-learn == 1.3.0
+- tensorboard == 2.13.0
 
 You can use the following instruction to install all the requirements:
 

@@ -3,9 +3,13 @@ import json
 import pandas as pd
 
 
-def build_soybean_train():
+def build_soybean_train(target_fips=None):
     csv_path = "./../input/county_info_2021.csv"
     df = pd.read_csv(csv_path)
+
+    if target_fips:
+        df = df[df["FIPS"].isin(target_fips)]
+
     counties = df.to_json(orient='records', lines=False)
     counties = json.loads(counties)
 
@@ -21,9 +25,13 @@ def build_soybean_train():
         json.dump(data, write_file)
 
 
-def build_soybean_val():
+def build_soybean_val(target_fips=None):
     csv_path = "./../input/county_info_2022.csv"
     df = pd.read_csv(csv_path)
+
+    if target_fips:
+        df = df[df["FIPS"].isin(target_fips)]
+
     counties = df.to_json(orient='records', lines=False)
     counties = json.loads(counties)
 
@@ -95,5 +103,8 @@ def get_long_HRRR_obj(state, fips, years, months=[i + 1 for i in range(12)]):
 
 
 if __name__ == '__main__':
-    build_soybean_train()
-    build_soybean_val()
+    target_fips = ["22007", "22121", "22043", "22107", "28089", "28015", "17091", "17155", "19117", "19135"]
+    target_fips = list(map(int, target_fips))
+
+    build_soybean_train(target_fips=target_fips)
+    build_soybean_val(target_fips=target_fips)

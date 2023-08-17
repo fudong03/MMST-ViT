@@ -18,8 +18,8 @@ class MMST_ViT(nn.Module):
         self.batch_size = batch_size
         self.pvt_backbone = pvt_backbone
 
-        # self.proj_context = nn.Linear(num_year * num_long_term_seq * context_dim, num_short_term_seq * dim)
-        self.proj_context = nn.Linear(num_year * num_long_term_seq * context_dim, dim)
+        self.proj_context = nn.Linear(num_year * num_long_term_seq * context_dim, num_short_term_seq * dim)
+        # self.proj_context = nn.Linear(num_year * num_long_term_seq * context_dim, dim)
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_short_term_seq, num_grid, dim))
         self.space_token = nn.Parameter(torch.randn(1, 1, dim))
@@ -77,8 +77,8 @@ class MMST_ViT(nn.Module):
         # concatenate parameters in different months
         yl = rearrange(yl, 'b y m d -> b (y m d)')
         yl = self.proj_context(yl)
-        # yl = rearrange(yl, 'b (t d) -> b t d', t=1)
-        yl = repeat(yl, '() d -> b t d', b=b, t=t)
+        yl = rearrange(yl, 'b (t d) -> b t d', t=t)
+        # yl = repeat(yl, '() d -> b t d', b=b, t=t)
 
         yl = torch.cat((cls_temporal_tokens, yl), dim=1)
         yl = self.norm1(yl)

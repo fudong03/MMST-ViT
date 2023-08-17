@@ -26,9 +26,7 @@ from models_pvt_simclr import PVTSimCLR
 from typing import Iterable
 import util.lr_sched as lr_sched
 from models_mmst_vit import MMST_ViT
-from tqdm import tqdm
 from util import metrics
-import pandas as pd
 
 from datetime import datetime
 
@@ -96,16 +94,14 @@ def get_args_parser():
 
     # dataset
     parser.add_argument('-dr', '--root_dir', type=str, default='/mnt/data/Tiny CropNet')
-    parser.add_argument('-sf', '--save_freq', type=int, default=1)
+    parser.add_argument('-sf', '--save_freq', type=int, default=2)
 
     # train and val
     parser.add_argument('-dft', '--data_file_train', type=str, default='./data/soybean_train.json')
     parser.add_argument('-dfv', '--data_file_val', type=str, default='./data/soybean_val.json')
 
     # pvt_simclr
-    # parser.add_argument('--pvt_simclr', default='', help='load from checkpoint')
-    parser.add_argument('--pvt_simclr', default='./models/pvt_simclr/checkpoint-30.pth', help='load from checkpoint')
-    # parser.add_argument('--pvt_simclr', default='./models/pvt_simclr/pvt_tiny.pth', help='load from checkpoint')
+    parser.add_argument('--pvt_simclr', default='', help='load from checkpoint')
 
     # evaluate
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
@@ -440,31 +436,7 @@ def evaluate(model: torch.nn.Module, data_loader_sentinel: Iterable, data_loader
 
     global best_metrics
     best_metrics = [min(best_metrics[0], rmse), max(best_metrics[1], r2), max(best_metrics[2], corr)]
-    print("Metrics: RMSE: {}  R_Squared: {}  Corr: {}; Best Metrics: RMSE: {}  R_Squared: {}  Corr: {}"
-          .format(f"{rmse:.2f}", f"{r2:.2f}", f"{corr:.2f}", f"{best_metrics[0]:.2f}", f"{ best_metrics[1]:.2f}", f"{best_metrics[2]:.2f}"))
-
-    # save to csv
-    save_results(rmse, r2, corr, best_metrics)
-
-
-def save_results(rmse, r2, corr, best_metrics):
-    csv_path = "./output_dir/pred/soybeans_{}.csv".format(datetime.now().strftime("%Y-%m-%d"))
-
-    now = datetime.now()
-    date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
-
-    data = {
-        'RMSE': [rmse],
-        'R_Squared': [r2],
-        'Corr': [corr],
-        'Best_RMSE': [best_metrics[0]],
-        'Best_R_Squared': [best_metrics[1]],
-        'Best_Corr': [best_metrics[2]],
-        'Run Time': [date_time],
-        }
-
-    df = pd.DataFrame(data)
-    df.to_csv(csv_path, mode='a')
+    print("Metrics: RMSE: {}  R_Squared: {}  Corr: {}".format(f"{best_metrics[0]:.2f}", f"{ best_metrics[1]:.2f}", f"{best_metrics[2]:.2f}"))
 
 
 if __name__ == '__main__':

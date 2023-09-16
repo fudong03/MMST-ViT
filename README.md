@@ -62,3 +62,10 @@ To fine-tune MMST-ViT for crop yield predictions, use the following commend:
 python main_finetune_mmst_vit.py
 ```
 
+## License
+
+This repository is under the CC-BY-NC 4.0 license. Please refer to [LICENSE](https://github.com/fudong03/MMST-ViT/blob/main/LICENSE) for details.
+
+## Acknowledgement
+
+This repository is based on [PVT](https://github.com/whai362/PVT) and [MAE](https://github.com/facebookresearch/mae). We thank the authors for releasing the code.

@@ -68,4 +68,4 @@ This repository is under the CC-BY-NC 4.0 license. Please refer to [LICENSE](htt
 
 ## Acknowledgment
 
-This repository is based on [PVT](https://github.com/whai362/PVT) and [MAE](https://github.com/facebookresearch/mae). We thank the authors for releasing the code.
+This repository is based on the official implementation of [PVT](https://github.com/whai362/PVT) and [MAE](https://github.com/facebookresearch/mae). We thank the authors for releasing the code.

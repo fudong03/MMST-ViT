@@ -75,7 +75,8 @@ This repository is based on the official implementation of [PVT](https://github.
 ```
 @inproceedings{fudong:iccv23:mmst_vit,
   title={MMST-ViT: Climate Change-aware Crop Yield Prediction via Multi-Modal Spatial-Temporal Vision Transformer},
-  author={Fudong Lin and Summer Crawford and Kaleb Guillot and Yihe Zhang and Yan Chen and Xu Yuan and Li Chen and Shelby Williams and Robert Minvielle and Xiangming Xiao and Drew Gholson and Nicolas Ashwell and Tri Setiyono and Brenda S. Tubana and Lu Peng and Magdy Bayoumi and Nian-Feng Tzeng},
+  author={Fudong Lin and Summer Crawford and Kaleb Guillot and Yihe Zhang and Yan Chen and Xu Yuan and Li Chen and Shelby Williams and Robert Minvielle
+and Xiangming Xiao and Drew Gholson and Nicolas Ashwell and Tri Setiyono and Brenda S. Tubana and Lu Peng and Magdy Bayoumi and Nian-Feng Tzeng},
   booktitle={2023 {IEEE/CVF} International Conference on Computer Vision, {ICCV} 2023, Paris, France, October 2-6, 2023},
   year={2023}
 }

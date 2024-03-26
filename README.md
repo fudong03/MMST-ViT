@@ -46,6 +46,10 @@ You can use the following instructions to install all the requirements:
 pip install -r requirements.txt
 ```
 
+The following code shows how to generate the JSON configuration file for the data loader (using soybean predictions as an example):
+```python
+python config/build_config_soybean.py
+```
 
 
 ## Pre-training

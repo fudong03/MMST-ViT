@@ -27,6 +27,7 @@ Now, our Tiny CropNet dataset is available at [HuggingFace Datasets](https://hug
 ### The CropNet Dataset
 As of March 2024, we release our CropNet dataset at [HuggingFace](https://huggingface.co/datasets/CropNet/CropNet). The CropNet dataset is an extension of the Tiny CropNet Dataset, which is composed of three modalities of data, i.e., Sentinel-2 Imagery, WRF-HRRR Computed Dataset, and USDA Crop Dataset, spanning from 2017 to 2022 (i.e., 6 years) across 2291 U.S. counties, with its geographic distribution illustrated below. We also include the number of counties corresponding to each crop type in the USDA Crop Dataset (see the rightmost bar chart in the figure) since crop planting is highly geography-dependent.
 
+![CropNet](input/dataset-geo-overview.png)
 
 ## Requirements
 
